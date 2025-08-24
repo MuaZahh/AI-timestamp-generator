@@ -13,7 +13,14 @@ from speech_processor import SpeechProcessor
 from content_analyzer import ContentAnalyzer
 from timestamp_generator import TimestampGenerator
 from export_processor import ExportProcessor
-from batch_processor import batch_processor
+# Import batch processor with fallback
+try:
+    from batch_processor import batch_processor
+    BATCH_PROCESSING_AVAILABLE = True
+except ImportError as e:
+    print(f"Batch processing not available: {e}")
+    batch_processor = None
+    BATCH_PROCESSING_AVAILABLE = False
 from logging_config import initialize_logging, log_processing_start, log_processing_step, log_processing_error, log_processing_complete, PerformanceLogger
 from error_handlers import register_error_handlers, validate_video_file, validate_video_exists, validate_batch_request, validate_export_format, handle_processing_errors, handle_file_operations, APIError, ValidationError, ProcessingError, FileError
 import time
@@ -42,12 +49,22 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 db = SQLAlchemy(app)
 
-# Initialize processors
-audio_processor = AudioProcessor()
-speech_processor = SpeechProcessor()
-content_analyzer = ContentAnalyzer()
-timestamp_generator = TimestampGenerator()
-export_processor = ExportProcessor()
+# Initialize processors with error handling
+try:
+    audio_processor = AudioProcessor()
+    speech_processor = SpeechProcessor()
+    content_analyzer = ContentAnalyzer()
+    timestamp_generator = TimestampGenerator()
+    export_processor = ExportProcessor()
+    logger.info("All processors initialized successfully")
+except Exception as e:
+    logger.error(f"Error initializing processors: {e}")
+    # Create minimal fallback processors
+    audio_processor = None
+    speech_processor = None
+    content_analyzer = None
+    timestamp_generator = None
+    export_processor = None
 
 # Database Models
 class Video(db.Model):
@@ -94,7 +111,24 @@ def get_file_size(file_path):
 # Routes
 @app.route('/')
 def index():
-    return render_template('index.html')
+    try:
+        return render_template('index.html')
+    except Exception as e:
+        return jsonify({
+            'error': 'Template rendering failed',
+            'message': str(e),
+            'fallback': 'API is working at /api'
+        }), 500
+
+@app.route('/test')
+def test():
+    """Simple test endpoint"""
+    return jsonify({
+        'status': 'success',
+        'message': 'AI Timestamp Generator is running!',
+        'timestamp': datetime.utcnow().isoformat(),
+        'environment': 'production' if os.getenv('VERCEL') else 'development'
+    })
 
 @app.route('/videos')
 def videos():
@@ -113,6 +147,15 @@ def api_info():
     return jsonify({
         'message': 'AI Timestamp Generator API',
         'version': '1.0.0',
+        'status': 'running',
+        'processors': {
+            'audio_processor': audio_processor is not None,
+            'speech_processor': speech_processor is not None,
+            'content_analyzer': content_analyzer is not None,
+            'timestamp_generator': timestamp_generator is not None,
+            'export_processor': export_processor is not None,
+            'batch_processor': BATCH_PROCESSING_AVAILABLE
+        },
         'endpoints': {
             'upload': '/api/upload',
             'status': '/api/video/<video_id>/status',
