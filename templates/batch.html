@@ -1,0 +1,486 @@
+{% extends "base.html" %}
+
+{% block title %}Batch Processing{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2>Batch Processing</h2>
+                <div class="btn-group">
+                    <button class="btn btn-primary" onclick="createBatchFromPending()">
+                        Process Pending Videos
+                    </button>
+                    <button class="btn btn-warning" onclick="retryFailedVideos()">
+                        Retry Failed Videos
+                    </button>
+                    <button class="btn btn-outline-secondary" onclick="refreshJobs()">
+                        <i class="fas fa-sync"></i> Refresh
+                    </button>
+                </div>
+            </div>
+
+            <!-- Batch Statistics -->
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <div class="card bg-primary text-white">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <h4 class="mb-0" id="activeJobs">-</h4>
+                                    <small>Active Jobs</small>
+                                </div>
+                                <i class="fas fa-play-circle fa-2x opacity-75"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-success text-white">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <h4 class="mb-0" id="completedJobs">-</h4>
+                                    <small>Completed Jobs</small>
+                                </div>
+                                <i class="fas fa-check-circle fa-2x opacity-75"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-success text-white">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <h4 class="mb-0" id="totalVideosProcessed">-</h4>
+                                    <small>Videos Processed</small>
+                                </div>
+                                <i class="fas fa-video fa-2x opacity-75"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-info text-white">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <h4 class="mb-0" id="queueSize">-</h4>
+                                    <small>Queue Size</small>
+                                </div>
+                                <i class="fas fa-list fa-2x opacity-75"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Create Custom Batch Job -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Create Custom Batch Job</h5>
+                </div>
+                <div class="card-body">
+                    <form id="customBatchForm">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <label for="videoIdList" class="form-label">Video IDs (comma or line separated)</label>
+                                <textarea class="form-control" id="videoIdList" rows="3" 
+                                    placeholder="Enter video IDs separated by commas or new lines..."></textarea>
+                            </div>
+                            <div class="col-md-4 d-flex align-items-end">
+                                <button type="submit" class="btn btn-primary w-100">Create Batch Job</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Batch Jobs List -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Recent Batch Jobs</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Job ID</th>
+                                    <th>Status</th>
+                                    <th>Progress</th>
+                                    <th>Videos</th>
+                                    <th>Success/Failed</th>
+                                    <th>Created</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="batchJobsTable">
+                                <tr>
+                                    <td colspan="7" class="text-center text-muted">
+                                        <i class="fas fa-spinner fa-spin"></i> Loading batch jobs...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Job Details Modal -->
+<div class="modal fade" id="jobDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Batch Job Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="jobDetailsContent">
+                    <!-- Job details will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let refreshInterval;
+let selectedJobId = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadBatchStats();
+    loadBatchJobs();
+    
+    // Auto-refresh every 5 seconds
+    refreshInterval = setInterval(() => {
+        loadBatchStats();
+        loadBatchJobs();
+    }, 5000);
+    
+    // Custom batch form submission
+    document.getElementById('customBatchForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        createCustomBatch();
+    });
+});
+
+// Clean up interval when leaving page
+window.addEventListener('beforeunload', function() {
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+    }
+});
+
+function loadBatchStats() {
+    fetch('/api/batch/stats')
+        .then(response => response.json())
+        .then(stats => {
+            document.getElementById('activeJobs').textContent = stats.active_jobs || 0;
+            document.getElementById('completedJobs').textContent = stats.completed_jobs || 0;
+            document.getElementById('totalVideosProcessed').textContent = stats.total_videos_processed || 0;
+            document.getElementById('queueSize').textContent = stats.queue_size || 0;
+        })
+        .catch(error => {
+            console.error('Error loading batch stats:', error);
+        });
+}
+
+function loadBatchJobs() {
+    fetch('/api/batch/jobs?limit=20')
+        .then(response => response.json())
+        .then(data => {
+            const tbody = document.getElementById('batchJobsTable');
+            
+            if (!data.jobs || data.jobs.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="text-center text-muted">No batch jobs found</td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            tbody.innerHTML = data.jobs.map(job => {
+                const statusClass = getStatusClass(job.status);
+                const createdAt = new Date(job.created_at).toLocaleString();
+                
+                return `
+                    <tr>
+                        <td>
+                            <small class="font-monospace">${job.id.substring(0, 8)}...</small>
+                        </td>
+                        <td>
+                            <span class="badge ${statusClass}">${job.status}</span>
+                        </td>
+                        <td>
+                            <div class="progress" style="height: 20px;">
+                                <div class="progress-bar ${getProgressBarClass(job.status)}" 
+                                     style="width: ${job.progress_percent}%">
+                                    ${job.progress_percent}%
+                                </div>
+                            </div>
+                        </td>
+                        <td>${job.total_videos}</td>
+                        <td>
+                            <span class="text-success">${job.processed_videos}</span> / 
+                            <span class="text-danger">${job.failed_videos}</span>
+                        </td>
+                        <td>
+                            <small>${createdAt}</small>
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-primary btn-sm" 
+                                        onclick="showJobDetails('${job.id}')">
+                                    Details
+                                </button>
+                                ${job.status === 'processing' ? 
+                                    `<button class="btn btn-outline-danger btn-sm" 
+                                             onclick="cancelJob('${job.id}')">Cancel</button>` : ''}
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        })
+        .catch(error => {
+            console.error('Error loading batch jobs:', error);
+            document.getElementById('batchJobsTable').innerHTML = `
+                <tr>
+                    <td colspan="7" class="text-center text-danger">Error loading batch jobs</td>
+                </tr>
+            `;
+        });
+}
+
+function getStatusClass(status) {
+    const classes = {
+        'pending': 'bg-secondary',
+        'processing': 'bg-primary',
+        'completed': 'bg-success',
+        'failed': 'bg-danger',
+        'cancelled': 'bg-warning'
+    };
+    return classes[status] || 'bg-secondary';
+}
+
+function getProgressBarClass(status) {
+    const classes = {
+        'pending': 'bg-secondary',
+        'processing': 'bg-primary progress-bar-striped progress-bar-animated',
+        'completed': 'bg-success',
+        'failed': 'bg-danger',
+        'cancelled': 'bg-warning'
+    };
+    return classes[status] || 'bg-secondary';
+}
+
+function createBatchFromPending() {
+    const limit = prompt('How many pending videos to process? (max 50)', '10');
+    if (!limit) return;
+    
+    const numLimit = parseInt(limit);
+    if (isNaN(numLimit) || numLimit < 1 || numLimit > 50) {
+        alert('Please enter a number between 1 and 50');
+        return;
+    }
+    
+    fetch('/api/batch/pending', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ limit: numLimit })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.job_id) {
+            alert(`Batch job created successfully!\nJob ID: ${data.job_id}`);
+            loadBatchStats();
+            loadBatchJobs();
+        } else if (data.message) {
+            alert(data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error creating batch from pending:', error);
+        alert('Error creating batch job. Please try again.');
+    });
+}
+
+function retryFailedVideos() {
+    if (!confirm('Create a batch job to retry all failed videos?')) {
+        return;
+    }
+    
+    fetch('/api/batch/retry-failed', {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.job_id) {
+            alert(`Batch job created successfully!\nJob ID: ${data.job_id}`);
+            loadBatchStats();
+            loadBatchJobs();
+        } else if (data.message) {
+            alert(data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error creating retry batch:', error);
+        alert('Error creating batch job. Please try again.');
+    });
+}
+
+function createCustomBatch() {
+    const videoIdText = document.getElementById('videoIdList').value.trim();
+    if (!videoIdText) {
+        alert('Please enter video IDs');
+        return;
+    }
+    
+    // Parse video IDs (support comma and newline separation)
+    const videoIds = videoIdText
+        .split(/[,\n]/)
+        .map(id => id.trim())
+        .filter(id => id.length > 0);
+    
+    if (videoIds.length === 0) {
+        alert('No valid video IDs found');
+        return;
+    }
+    
+    if (videoIds.length > 50) {
+        alert('Maximum 50 videos per batch job');
+        return;
+    }
+    
+    fetch('/api/batch/create', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ video_ids: videoIds })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.job_id) {
+            alert(`Batch job created successfully!\nJob ID: ${data.job_id}\nVideo count: ${data.video_count}`);
+            document.getElementById('videoIdList').value = '';
+            loadBatchStats();
+            loadBatchJobs();
+        } else if (data.error) {
+            alert(`Error: ${data.error}`);
+        }
+    })
+    .catch(error => {
+        console.error('Error creating custom batch:', error);
+        alert('Error creating batch job. Please try again.');
+    });
+}
+
+function showJobDetails(jobId) {
+    selectedJobId = jobId;
+    
+    fetch(`/api/batch/${jobId}/status`)
+        .then(response => response.json())
+        .then(job => {
+            const content = document.getElementById('jobDetailsContent');
+            const createdAt = new Date(job.created_at).toLocaleString();
+            const startedAt = job.started_at ? new Date(job.started_at).toLocaleString() : 'Not started';
+            const completedAt = job.completed_at ? new Date(job.completed_at).toLocaleString() : 'Not completed';
+            
+            content.innerHTML = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Job Information</h6>
+                        <table class="table table-sm">
+                            <tr><td><strong>Job ID:</strong></td><td class="font-monospace">${job.id}</td></tr>
+                            <tr><td><strong>Status:</strong></td><td><span class="badge ${getStatusClass(job.status)}">${job.status}</span></td></tr>
+                            <tr><td><strong>Created:</strong></td><td>${createdAt}</td></tr>
+                            <tr><td><strong>Started:</strong></td><td>${startedAt}</td></tr>
+                            <tr><td><strong>Completed:</strong></td><td>${completedAt}</td></tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Progress</h6>
+                        <table class="table table-sm">
+                            <tr><td><strong>Total Videos:</strong></td><td>${job.total_videos}</td></tr>
+                            <tr><td><strong>Processed:</strong></td><td class="text-success">${job.processed_videos}</td></tr>
+                            <tr><td><strong>Failed:</strong></td><td class="text-danger">${job.failed_videos}</td></tr>
+                            <tr><td><strong>Progress:</strong></td><td>${job.progress_percent}%</td></tr>
+                            <tr><td><strong>Current Video:</strong></td><td class="font-monospace">${job.current_video_id || 'None'}</td></tr>
+                        </table>
+                    </div>
+                </div>
+                
+                ${job.error_message ? `
+                    <div class="alert alert-danger mt-3">
+                        <strong>Error:</strong> ${job.error_message}
+                    </div>
+                ` : ''}
+                
+                <div class="mt-3">
+                    <div class="progress" style="height: 25px;">
+                        <div class="progress-bar ${getProgressBarClass(job.status)}" 
+                             style="width: ${job.progress_percent}%">
+                            ${job.progress_percent}%
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-3">
+                    <h6>Video IDs (${job.video_ids.length})</h6>
+                    <div class="bg-light p-2 border rounded" style="max-height: 200px; overflow-y: auto;">
+                        <small class="font-monospace">
+                            ${job.video_ids.map(id => `<div>${id}</div>`).join('')}
+                        </small>
+                    </div>
+                </div>
+            `;
+            
+            const modal = new bootstrap.Modal(document.getElementById('jobDetailsModal'));
+            modal.show();
+        })
+        .catch(error => {
+            console.error('Error loading job details:', error);
+            alert('Error loading job details');
+        });
+}
+
+function cancelJob(jobId) {
+    if (!confirm('Are you sure you want to cancel this batch job?')) {
+        return;
+    }
+    
+    fetch(`/api/batch/${jobId}/cancel`, {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.message) {
+            alert(data.message);
+            loadBatchStats();
+            loadBatchJobs();
+        } else if (data.error) {
+            alert(`Error: ${data.error}`);
+        }
+    })
+    .catch(error => {
+        console.error('Error cancelling job:', error);
+        alert('Error cancelling job');
+    });
+}
+
+function refreshJobs() {
+    loadBatchStats();
+    loadBatchJobs();
+}
+</script>
+{% endblock %}

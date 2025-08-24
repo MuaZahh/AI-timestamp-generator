@@ -1,0 +1,370 @@
+{% extends "base.html" %}
+
+{% block title %}AI Timestamp Generator - Upload Your Video{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Hero Section -->
+    <div class="col-12 mb-4">
+        <div class="hero-section text-center py-5">
+            <h1 class="display-4 text-primary mb-3">
+                <i class="bi bi-magic"></i>
+                AI Timestamp Generator
+            </h1>
+            <p class="lead text-muted mb-4">
+                Upload any video and get intelligent timestamps automatically generated using AI
+            </p>
+            <div class="features-grid row g-3 justify-content-center">
+                <div class="col-md-3 col-sm-6">
+                    <div class="feature-item">
+                        <i class="bi bi-brain text-primary fs-2"></i>
+                        <h6>Smart Analysis</h6>
+                        <small class="text-muted">Topic detection & content understanding</small>
+                    </div>
+                </div>
+                <div class="col-md-3 col-sm-6">
+                    <div class="feature-item">
+                        <i class="bi bi-people text-success fs-2"></i>
+                        <h6>Speaker Detection</h6>
+                        <small class="text-muted">Automatic speaker change identification</small>
+                    </div>
+                </div>
+                <div class="col-md-3 col-sm-6">
+                    <div class="feature-item">
+                        <i class="bi bi-tag text-warning fs-2"></i>
+                        <h6>Smart Labels</h6>
+                        <small class="text-muted">AI-generated descriptive titles</small>
+                    </div>
+                </div>
+                <div class="col-md-3 col-sm-6">
+                    <div class="feature-item">
+                        <i class="bi bi-download text-info fs-2"></i>
+                        <h6>Export Ready</h6>
+                        <small class="text-muted">YouTube chapters, SRT, JSON formats</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Upload Section -->
+    <div class="col-lg-8 offset-lg-2">
+        <div class="card shadow-sm">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">
+                    <i class="bi bi-cloud-upload"></i>
+                    Upload Your Video
+                </h5>
+            </div>
+            <div class="card-body">
+                <!-- Upload Form -->
+                <form id="upload-form" enctype="multipart/form-data">
+                    <div class="upload-area mb-4" id="upload-area">
+                        <div class="upload-content text-center py-5">
+                            <i class="bi bi-cloud-arrow-up display-1 text-muted mb-3"></i>
+                            <h4 class="text-muted mb-3">Drag & Drop Your Video Here</h4>
+                            <p class="text-muted mb-3">or</p>
+                            <input type="file" id="file-input" name="file" accept="video/*" class="d-none">
+                            <button type="button" class="btn btn-primary" onclick="document.getElementById('file-input').click()">
+                                <i class="bi bi-folder-plus"></i>
+                                Browse Files
+                            </button>
+                            <div class="mt-3">
+                                <small class="text-muted">
+                                    Supported formats: MP4, AVI, MOV, MKV, WMV, FLV, M4V, WEBM
+                                    <br>
+                                    Maximum file size: 100MB
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- File Info -->
+                    <div id="file-info" class="alert alert-info d-none">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <i class="bi bi-file-earmark-play"></i>
+                                <span id="file-name"></span>
+                                <small class="text-muted">(<span id="file-size"></span>)</small>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline-danger" id="remove-file">
+                                <i class="bi bi-x"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Upload Progress -->
+                    <div id="upload-progress" class="d-none">
+                        <div class="progress mb-3">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                 role="progressbar" style="width: 0%"></div>
+                        </div>
+                        <div class="text-center">
+                            <span id="progress-text">Uploading...</span>
+                        </div>
+                    </div>
+
+                    <!-- Upload Button -->
+                    <div class="text-center">
+                        <button type="submit" id="upload-btn" class="btn btn-success btn-lg" disabled>
+                            <i class="bi bi-cloud-upload"></i>
+                            Upload & Process Video
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Videos -->
+<div class="row mt-5" id="recent-videos">
+    <div class="col-12">
+        <h3 class="text-center mb-4">
+            <i class="bi bi-clock-history"></i>
+            Recent Videos
+        </h3>
+        <div id="videos-grid" class="row g-3">
+            <!-- Videos will be loaded here -->
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Upload functionality
+class VideoUploader {
+    constructor() {
+        this.fileInput = document.getElementById('file-input');
+        this.uploadArea = document.getElementById('upload-area');
+        this.uploadForm = document.getElementById('upload-form');
+        this.uploadBtn = document.getElementById('upload-btn');
+        this.fileInfo = document.getElementById('file-info');
+        this.removeFileBtn = document.getElementById('remove-file');
+        this.progressContainer = document.getElementById('upload-progress');
+        this.progressBar = document.querySelector('.progress-bar');
+        this.progressText = document.getElementById('progress-text');
+
+        this.selectedFile = null;
+        this.maxFileSize = 100 * 1024 * 1024; // 100MB
+
+        this.initEventListeners();
+        this.loadRecentVideos();
+    }
+
+    initEventListeners() {
+        // File input change
+        this.fileInput.addEventListener('change', (e) => {
+            this.handleFileSelect(e.target.files[0]);
+        });
+
+        // Drag and drop
+        this.uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            this.uploadArea.classList.add('drag-over');
+        });
+
+        this.uploadArea.addEventListener('dragleave', () => {
+            this.uploadArea.classList.remove('drag-over');
+        });
+
+        this.uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            this.uploadArea.classList.remove('drag-over');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                this.handleFileSelect(files[0]);
+            }
+        });
+
+        // Remove file
+        this.removeFileBtn.addEventListener('click', () => {
+            this.clearFile();
+        });
+
+        // Form submission
+        this.uploadForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.uploadFile();
+        });
+    }
+
+    handleFileSelect(file) {
+        if (!file) return;
+
+        // Validate file type
+        const allowedTypes = ['video/mp4', 'video/avi', 'video/mov', 'video/mkv', 'video/wmv', 'video/flv', 'video/m4v', 'video/webm'];
+        if (!allowedTypes.some(type => file.type.includes(type.split('/')[1]))) {
+            showAlert('Please select a valid video file.', 'danger');
+            return;
+        }
+
+        // Validate file size
+        if (file.size > this.maxFileSize) {
+            showAlert('File size must be less than 100MB.', 'danger');
+            return;
+        }
+
+        this.selectedFile = file;
+        this.showFileInfo(file);
+        this.uploadBtn.disabled = false;
+    }
+
+    showFileInfo(file) {
+        document.getElementById('file-name').textContent = file.name;
+        document.getElementById('file-size').textContent = this.formatFileSize(file.size);
+        this.fileInfo.classList.remove('d-none');
+    }
+
+    clearFile() {
+        this.selectedFile = null;
+        this.fileInput.value = '';
+        this.fileInfo.classList.add('d-none');
+        this.uploadBtn.disabled = true;
+    }
+
+    async uploadFile() {
+        if (!this.selectedFile) return;
+
+        const formData = new FormData();
+        formData.append('file', this.selectedFile);
+
+        // Show progress
+        this.progressContainer.classList.remove('d-none');
+        this.uploadBtn.disabled = true;
+
+        try {
+            const response = await fetch('/api/upload', {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                showAlert('Video uploaded successfully! Starting processing...', 'success');
+                
+                // Start processing
+                await this.startProcessing(result.video_id);
+                
+                // Clear form
+                this.clearFile();
+                this.progressContainer.classList.add('d-none');
+                
+                // Redirect to video page
+                window.location.href = `/video/${result.video_id}`;
+            } else {
+                throw new Error(result.error || 'Upload failed');
+            }
+        } catch (error) {
+            console.error('Upload error:', error);
+            showAlert(error.message, 'danger');
+            this.progressContainer.classList.add('d-none');
+            this.uploadBtn.disabled = false;
+        }
+    }
+
+    async startProcessing(videoId) {
+        try {
+            const response = await fetch(`/api/video/${videoId}/process`, {
+                method: 'POST'
+            });
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Processing failed to start');
+            }
+        } catch (error) {
+            console.error('Processing start error:', error);
+            showAlert('Upload successful, but processing failed to start. You can start it manually from the video page.', 'warning');
+        }
+    }
+
+    async loadRecentVideos() {
+        try {
+            const response = await fetch('/api/videos');
+            const data = await response.json();
+            
+            if (response.ok && data.videos) {
+                this.displayRecentVideos(data.videos.slice(0, 6)); // Show last 6 videos
+            }
+        } catch (error) {
+            console.error('Failed to load recent videos:', error);
+        }
+    }
+
+    displayRecentVideos(videos) {
+        const grid = document.getElementById('videos-grid');
+        
+        if (videos.length === 0) {
+            grid.innerHTML = `
+                <div class="col-12 text-center">
+                    <p class="text-muted">No videos uploaded yet. Upload your first video above!</p>
+                </div>
+            `;
+            return;
+        }
+
+        grid.innerHTML = videos.map(video => `
+            <div class="col-md-4 col-sm-6">
+                <div class="card video-card">
+                    <div class="card-body">
+                        <h6 class="card-title text-truncate" title="${video.filename}">
+                            <i class="bi bi-play-circle"></i>
+                            ${video.filename}
+                        </h6>
+                        <div class="video-info">
+                            <small class="text-muted d-block">
+                                <i class="bi bi-clock"></i>
+                                ${new Date(video.created_at).toLocaleDateString()}
+                            </small>
+                            <small class="text-muted d-block">
+                                <i class="bi bi-file-earmark"></i>
+                                ${this.formatFileSize(video.file_size)}
+                            </small>
+                            <span class="badge ${this.getStatusBadge(video.status)} mt-2">
+                                ${video.status.charAt(0).toUpperCase() + video.status.slice(1)}
+                            </span>
+                        </div>
+                        <div class="mt-3">
+                            <a href="/video/${video.id}" class="btn btn-primary btn-sm">
+                                <i class="bi bi-eye"></i> View
+                            </a>
+                            ${video.timestamp_count > 0 ? `
+                                <span class="badge bg-success ms-2">
+                                    ${video.timestamp_count} timestamps
+                                </span>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    getStatusBadge(status) {
+        const badges = {
+            'uploaded': 'bg-info',
+            'processing': 'bg-warning',
+            'completed': 'bg-success',
+            'failed': 'bg-danger'
+        };
+        return badges[status] || 'bg-secondary';
+    }
+
+    formatFileSize(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+}
+
+// Initialize uploader when page loads
+document.addEventListener('DOMContentLoaded', () => {
+    new VideoUploader();
+});
+</script>
+{% endblock %}

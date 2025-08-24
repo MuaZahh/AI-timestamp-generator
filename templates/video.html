@@ -1,0 +1,735 @@
+{% extends "base.html" %}
+
+{% block title %}Video Processing - AI Timestamp Generator{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Video Info Header -->
+    <div class="col-12 mb-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="mb-0">
+                        <i class="bi bi-play-circle"></i>
+                        <span id="video-filename">Loading...</span>
+                    </h5>
+                    <small class="text-muted" id="video-info"></small>
+                </div>
+                <div>
+                    <span id="video-status-badge" class="badge bg-secondary">Unknown</span>
+                    <button id="refresh-btn" class="btn btn-sm btn-outline-primary ms-2">
+                        <i class="bi bi-arrow-clockwise"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Processing Status -->
+    <div class="col-lg-8 mb-4">
+        <div class="card" id="processing-card">
+            <div class="card-header">
+                <h6 class="mb-0">
+                    <i class="bi bi-gear"></i>
+                    Processing Status
+                </h6>
+            </div>
+            <div class="card-body">
+                <!-- Processing Steps -->
+                <div class="processing-steps">
+                    <div class="step" id="step-upload">
+                        <div class="step-icon">
+                            <i class="bi bi-cloud-check"></i>
+                        </div>
+                        <div class="step-content">
+                            <h6>File Upload</h6>
+                            <small class="text-muted">Video file received and validated</small>
+                        </div>
+                    </div>
+                    
+                    <div class="step" id="step-audio">
+                        <div class="step-icon">
+                            <i class="bi bi-music-note-beamed"></i>
+                        </div>
+                        <div class="step-content">
+                            <h6>Audio Extraction</h6>
+                            <small class="text-muted">Extracting audio using FFmpeg</small>
+                        </div>
+                    </div>
+                    
+                    <div class="step" id="step-transcription">
+                        <div class="step-icon">
+                            <i class="bi bi-mic"></i>
+                        </div>
+                        <div class="step-content">
+                            <h6>Speech Recognition</h6>
+                            <small class="text-muted">Converting speech to text with Deepgram</small>
+                        </div>
+                    </div>
+                    
+                    <div class="step" id="step-analysis">
+                        <div class="step-icon">
+                            <i class="bi bi-brain"></i>
+                        </div>
+                        <div class="step-content">
+                            <h6>Content Analysis</h6>
+                            <small class="text-muted">Analyzing topics and semantic structure</small>
+                        </div>
+                    </div>
+                    
+                    <div class="step" id="step-timestamps">
+                        <div class="step-icon">
+                            <i class="bi bi-clock"></i>
+                        </div>
+                        <div class="step-content">
+                            <h6>Timestamp Generation</h6>
+                            <small class="text-muted">Creating intelligent timestamps</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Processing Controls -->
+                <div class="mt-4 text-center" id="processing-controls">
+                    <button id="start-processing-btn" class="btn btn-success" style="display: none;">
+                        <i class="bi bi-play"></i>
+                        Start Processing
+                    </button>
+                    <button id="retry-processing-btn" class="btn btn-warning" style="display: none;">
+                        <i class="bi bi-arrow-clockwise"></i>
+                        Retry Processing
+                    </button>
+                </div>
+
+                <!-- Error Message -->
+                <div id="error-message" class="alert alert-danger mt-3" style="display: none;">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <span id="error-text"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Video Actions -->
+    <div class="col-lg-4 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">
+                    <i class="bi bi-tools"></i>
+                    Actions
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <button id="view-transcript-btn" class="btn btn-outline-primary" disabled>
+                        <i class="bi bi-file-text"></i>
+                        View Transcript
+                    </button>
+                    <button id="view-timestamps-btn" class="btn btn-outline-success" disabled>
+                        <i class="bi bi-clock-history"></i>
+                        View Timestamps
+                    </button>
+                    <button id="export-btn" class="btn btn-outline-info" disabled>
+                        <i class="bi bi-download"></i>
+                        Export Results
+                    </button>
+                    <div class="dropdown">
+                        <button class="btn btn-outline-warning dropdown-toggle w-100" type="button" 
+                                id="export-dropdown" data-bs-toggle="dropdown" disabled>
+                            <i class="bi bi-share"></i>
+                            Export Options
+                        </button>
+                        <ul class="dropdown-menu w-100" id="export-menu">
+                            <!-- Export options will be loaded dynamically -->
+                        </ul>
+                    </div>
+                </div>
+                <hr>
+                <button id="delete-video-btn" class="btn btn-outline-danger w-100">
+                    <i class="bi bi-trash"></i>
+                    Delete Video
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Results Section -->
+    <div class="col-12">
+        <!-- Transcript Tab -->
+        <div id="transcript-section" class="card mb-4" style="display: none;">
+            <div class="card-header">
+                <h6 class="mb-0">
+                    <i class="bi bi-file-text"></i>
+                    Full Transcript
+                </h6>
+            </div>
+            <div class="card-body">
+                <div id="transcript-content" class="transcript-text">
+                    Loading transcript...
+                </div>
+                <div class="mt-3">
+                    <button id="copy-transcript-btn" class="btn btn-sm btn-outline-primary">
+                        <i class="bi bi-clipboard"></i>
+                        Copy to Clipboard
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Timestamps Tab -->
+        <div id="timestamps-section" class="card mb-4" style="display: none;">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">
+                    <i class="bi bi-clock-history"></i>
+                    Generated Timestamps
+                </h6>
+                <div>
+                    <button id="edit-timestamps-btn" class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-pencil"></i>
+                        Edit
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="timestamps-list">
+                    Loading timestamps...
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Export Modal -->
+<div class="modal fade" id="export-modal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-download"></i>
+                    Export Results
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="export-content">
+                    <div class="text-center">
+                        <div class="spinner-border" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2">Generating export...</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button id="copy-export-btn" type="button" class="btn btn-primary">
+                    <i class="bi bi-clipboard"></i>
+                    Copy to Clipboard
+                </button>
+                <button id="download-export-btn" type="button" class="btn btn-success">
+                    <i class="bi bi-download"></i>
+                    Download File
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+class VideoProcessor {
+    constructor() {
+        this.videoId = window.location.pathname.split('/').pop();
+        this.refreshInterval = null;
+        this.currentExportFormat = null;
+        
+        this.initEventListeners();
+        this.loadVideoData();
+        this.startStatusPolling();
+    }
+
+    initEventListeners() {
+        // Refresh button
+        document.getElementById('refresh-btn').addEventListener('click', () => {
+            this.loadVideoData();
+        });
+
+        // Processing controls
+        document.getElementById('start-processing-btn').addEventListener('click', () => {
+            this.startProcessing();
+        });
+
+        document.getElementById('retry-processing-btn').addEventListener('click', () => {
+            this.startProcessing();
+        });
+
+        // Action buttons
+        document.getElementById('view-transcript-btn').addEventListener('click', () => {
+            this.toggleTranscript();
+        });
+
+        document.getElementById('view-timestamps-btn').addEventListener('click', () => {
+            this.toggleTimestamps();
+        });
+
+        // Load export formats and setup event listeners
+        this.loadExportFormats();
+
+        // Delete button
+        document.getElementById('delete-video-btn').addEventListener('click', () => {
+            this.deleteVideo();
+        });
+
+        // Copy buttons
+        document.getElementById('copy-transcript-btn').addEventListener('click', () => {
+            this.copyTranscript();
+        });
+
+        document.getElementById('copy-export-btn').addEventListener('click', () => {
+            this.copyExport();
+        });
+
+        document.getElementById('download-export-btn').addEventListener('click', () => {
+            this.downloadExport();
+        });
+    }
+
+    async loadVideoData() {
+        try {
+            const response = await fetch(`/api/video/${this.videoId}/status`);
+            const video = await response.json();
+
+            if (response.ok) {
+                this.updateVideoInfo(video);
+                this.updateProcessingStatus(video.status);
+                this.updateActionButtons(video);
+            } else {
+                throw new Error(video.error || 'Failed to load video data');
+            }
+        } catch (error) {
+            console.error('Failed to load video data:', error);
+            showAlert(error.message, 'danger');
+        }
+    }
+
+    updateVideoInfo(video) {
+        document.getElementById('video-filename').textContent = video.filename;
+        
+        const info = [];
+        if (video.file_size) {
+            info.push(this.formatFileSize(video.file_size));
+        }
+        if (video.duration) {
+            info.push(`${Math.round(video.duration)}s`);
+        }
+        if (video.created_at) {
+            info.push(`Uploaded: ${new Date(video.created_at).toLocaleString()}`);
+        }
+        
+        document.getElementById('video-info').textContent = info.join(' • ');
+    }
+
+    updateProcessingStatus(status) {
+        // Update status badge
+        const badge = document.getElementById('video-status-badge');
+        badge.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+        badge.className = `badge ${this.getStatusBadge(status)}`;
+
+        // Update processing steps
+        this.updateProcessingSteps(status);
+
+        // Update controls
+        this.updateProcessingControls(status);
+    }
+
+    updateProcessingSteps(status) {
+        const steps = ['upload', 'audio', 'transcription', 'analysis', 'timestamps'];
+        
+        steps.forEach((step, index) => {
+            const stepEl = document.getElementById(`step-${step}`);
+            stepEl.classList.remove('active', 'completed', 'error');
+
+            if (status === 'uploaded' && index === 0) {
+                stepEl.classList.add('completed');
+            } else if (status === 'processing') {
+                if (index === 0) {
+                    stepEl.classList.add('completed');
+                } else if (index === 1) {
+                    stepEl.classList.add('active');
+                }
+            } else if (status === 'completed') {
+                stepEl.classList.add('completed');
+            } else if (status === 'failed') {
+                if (index === 0) {
+                    stepEl.classList.add('completed');
+                } else if (index === 1) {
+                    stepEl.classList.add('error');
+                }
+            }
+        });
+    }
+
+    updateProcessingControls(status) {
+        const startBtn = document.getElementById('start-processing-btn');
+        const retryBtn = document.getElementById('retry-processing-btn');
+        const errorDiv = document.getElementById('error-message');
+
+        startBtn.style.display = status === 'uploaded' ? 'inline-block' : 'none';
+        retryBtn.style.display = status === 'failed' ? 'inline-block' : 'none';
+        errorDiv.style.display = status === 'failed' ? 'block' : 'none';
+
+        if (status === 'failed') {
+            document.getElementById('error-text').textContent = 
+                'Processing failed. Please try again or contact support if the issue persists.';
+        }
+    }
+
+    updateActionButtons(video) {
+        const status = video.status;
+        const hasTranscript = video.has_transcript;
+        const hasTimestamps = video.timestamp_count > 0;
+
+        document.getElementById('view-transcript-btn').disabled = !hasTranscript;
+        document.getElementById('view-timestamps-btn').disabled = !hasTimestamps;
+        document.getElementById('export-btn').disabled = !hasTimestamps;
+        document.getElementById('export-dropdown').disabled = !hasTimestamps;
+    }
+
+    async startProcessing() {
+        try {
+            const response = await fetch(`/api/video/${this.videoId}/process`, {
+                method: 'POST'
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                showAlert('Processing started successfully!', 'success');
+                this.loadVideoData();
+            } else {
+                throw new Error(result.error || 'Failed to start processing');
+            }
+        } catch (error) {
+            console.error('Processing start error:', error);
+            showAlert(error.message, 'danger');
+        }
+    }
+
+    startStatusPolling() {
+        this.refreshInterval = setInterval(() => {
+            this.loadVideoData();
+        }, 5000); // Poll every 5 seconds
+
+        // Stop polling when page is not visible
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                if (this.refreshInterval) {
+                    clearInterval(this.refreshInterval);
+                }
+            } else {
+                this.startStatusPolling();
+            }
+        });
+    }
+
+    async toggleTranscript() {
+        const section = document.getElementById('transcript-section');
+        
+        if (section.style.display === 'none') {
+            await this.loadTranscript();
+            section.style.display = 'block';
+            document.getElementById('view-transcript-btn').innerHTML = 
+                '<i class="bi bi-eye-slash"></i> Hide Transcript';
+        } else {
+            section.style.display = 'none';
+            document.getElementById('view-transcript-btn').innerHTML = 
+                '<i class="bi bi-file-text"></i> View Transcript';
+        }
+    }
+
+    async loadTranscript() {
+        try {
+            const response = await fetch(`/api/video/${this.videoId}/transcript`);
+            const data = await response.json();
+
+            if (response.ok) {
+                document.getElementById('transcript-content').innerHTML = `
+                    <div class="transcript-meta mb-3">
+                        <small class="text-muted">
+                            Language: ${data.language || 'Unknown'} • 
+                            Confidence: ${Math.round((data.confidence || 0) * 100)}%
+                        </small>
+                    </div>
+                    <div class="transcript-text">${data.transcript}</div>
+                `;
+            } else {
+                throw new Error(data.error || 'Failed to load transcript');
+            }
+        } catch (error) {
+            document.getElementById('transcript-content').innerHTML = 
+                `<div class="alert alert-danger">Error loading transcript: ${error.message}</div>`;
+        }
+    }
+
+    async toggleTimestamps() {
+        const section = document.getElementById('timestamps-section');
+        
+        if (section.style.display === 'none') {
+            await this.loadTimestamps();
+            section.style.display = 'block';
+            document.getElementById('view-timestamps-btn').innerHTML = 
+                '<i class="bi bi-eye-slash"></i> Hide Timestamps';
+        } else {
+            section.style.display = 'none';
+            document.getElementById('view-timestamps-btn').innerHTML = 
+                '<i class="bi bi-clock-history"></i> View Timestamps';
+        }
+    }
+
+    async loadTimestamps() {
+        try {
+            const response = await fetch(`/api/video/${this.videoId}/timestamps`);
+            const data = await response.json();
+
+            if (response.ok) {
+                this.displayTimestamps(data.timestamps);
+            } else {
+                throw new Error(data.error || 'Failed to load timestamps');
+            }
+        } catch (error) {
+            document.getElementById('timestamps-list').innerHTML = 
+                `<div class="alert alert-danger">Error loading timestamps: ${error.message}</div>`;
+        }
+    }
+
+    displayTimestamps(timestamps) {
+        const container = document.getElementById('timestamps-list');
+        
+        if (timestamps.length === 0) {
+            container.innerHTML = '<p class="text-muted">No timestamps generated yet.</p>';
+            return;
+        }
+
+        const html = timestamps.map((ts, index) => `
+            <div class="timestamp-item border rounded p-3 mb-3">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div class="flex-grow-1">
+                        <h6 class="mb-1">
+                            <span class="badge bg-primary me-2">${this.formatTime(ts.start_time)}</span>
+                            ${ts.title}
+                        </h6>
+                        <p class="text-muted mb-2">${ts.description}</p>
+                        <small class="text-muted">
+                            Duration: ${this.formatTime(ts.end_time - ts.start_time)} • 
+                            Confidence: ${Math.round(ts.confidence * 100)}%
+                        </small>
+                    </div>
+                    <div class="timestamp-actions">
+                        <button class="btn btn-sm btn-outline-primary" onclick="copyTimestamp('${ts.start_time}', '${ts.title}')">
+                            <i class="bi bi-clipboard"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+
+        container.innerHTML = html;
+    }
+
+    async exportResults(format) {
+        this.currentExportFormat = format;
+        const modal = new bootstrap.Modal(document.getElementById('export-modal'));
+        modal.show();
+
+        try {
+            // This would be implemented in Phase 5
+            await this.generateExport(format);
+        } catch (error) {
+            document.getElementById('export-content').innerHTML = 
+                `<div class="alert alert-danger">Export failed: ${error.message}</div>`;
+        }
+    }
+
+    async loadExportFormats() {
+        try {
+            const response = await fetch('/api/export/formats');
+            const data = await response.json();
+
+            if (response.ok) {
+                this.displayExportFormats(data.formats);
+            }
+        } catch (error) {
+            console.error('Failed to load export formats:', error);
+        }
+    }
+
+    displayExportFormats(formats) {
+        const menu = document.getElementById('export-menu');
+        const icons = {
+            'youtube': 'bi-youtube',
+            'srt': 'bi-file-text',
+            'vtt': 'bi-file-text',
+            'json': 'bi-code-square', 
+            'csv': 'bi-table',
+            'txt': 'bi-file-text'
+        };
+
+        menu.innerHTML = Object.entries(formats).map(([formatType, info]) => `
+            <li><a class="dropdown-item export-option" href="#" data-format="${formatType}">
+                <i class="bi ${icons[formatType] || 'bi-file-text'}"></i>
+                ${info.name}
+                <br><small class="text-muted">${info.description}</small>
+            </a></li>
+        `).join('');
+
+        // Add event listeners to new export options
+        menu.querySelectorAll('.export-option').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                const format = btn.dataset.format;
+                this.exportResults(format);
+            });
+        });
+    }
+
+    async generateExport(format) {
+        try {
+            const response = await fetch(`/api/video/${this.videoId}/export/${format}`);
+            const data = await response.json();
+
+            if (response.ok) {
+                this.currentExportData = data;
+                document.getElementById('export-content').innerHTML = `
+                    <div class="export-preview mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h6 class="mb-0">${data.format_name}</h6>
+                            <small class="text-muted">${data.timestamp_count} timestamps</small>
+                        </div>
+                        <div class="export-stats mb-3">
+                            <small class="text-muted">
+                                File: ${data.filename} • 
+                                Size: ${data.content.length} chars •
+                                Exported: ${new Date(data.exported_at).toLocaleString()}
+                            </small>
+                        </div>
+                        <div class="export-content-preview">
+                            <pre class="bg-light p-3 rounded" style="max-height: 400px; overflow-y: auto;">${data.content}</pre>
+                        </div>
+                    </div>
+                `;
+
+                // Update modal buttons
+                document.getElementById('copy-export-btn').style.display = 'inline-block';
+                document.getElementById('download-export-btn').style.display = 'inline-block';
+            } else {
+                throw new Error(data.error || 'Export failed');
+            }
+        } catch (error) {
+            document.getElementById('export-content').innerHTML = 
+                `<div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    Export failed: ${error.message}
+                </div>`;
+        }
+    }
+
+    async deleteVideo() {
+        if (!confirm('Are you sure you want to delete this video? This action cannot be undone.')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/video/${this.videoId}`, {
+                method: 'DELETE'
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                showAlert('Video deleted successfully!', 'success');
+                window.location.href = '/';
+            } else {
+                throw new Error(result.error || 'Failed to delete video');
+            }
+        } catch (error) {
+            showAlert(error.message, 'danger');
+        }
+    }
+
+    copyTranscript() {
+        const transcript = document.querySelector('.transcript-text').textContent;
+        navigator.clipboard.writeText(transcript).then(() => {
+            showAlert('Transcript copied to clipboard!', 'success');
+        }).catch(() => {
+            showAlert('Failed to copy transcript', 'danger');
+        });
+    }
+
+    copyExport() {
+        if (this.currentExportData) {
+            navigator.clipboard.writeText(this.currentExportData.content).then(() => {
+                showAlert('Export content copied to clipboard!', 'success');
+            }).catch(() => {
+                showAlert('Failed to copy export content', 'danger');
+            });
+        }
+    }
+
+    downloadExport() {
+        if (this.currentExportData) {
+            // Create download link
+            const blob = new Blob([this.currentExportData.content], { 
+                type: this.currentExportData.mime_type 
+            });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = this.currentExportData.filename;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            
+            showAlert(`Downloaded ${this.currentExportData.filename}!`, 'success');
+        }
+    }
+
+    getStatusBadge(status) {
+        const badges = {
+            'uploaded': 'bg-info',
+            'processing': 'bg-warning',
+            'completed': 'bg-success',
+            'failed': 'bg-danger'
+        };
+        return badges[status] || 'bg-secondary';
+    }
+
+    formatFileSize(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    formatTime(seconds) {
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+    }
+}
+
+// Global functions for timestamp actions
+function copyTimestamp(startTime, title) {
+    const timestamp = `${Math.floor(startTime / 60)}:${Math.floor(startTime % 60).toString().padStart(2, '0')} - ${title}`;
+    navigator.clipboard.writeText(timestamp).then(() => {
+        showAlert('Timestamp copied!', 'success');
+    });
+}
+
+// Initialize when page loads
+document.addEventListener('DOMContentLoaded', () => {
+    new VideoProcessor();
+});
+</script>
+{% endblock %}

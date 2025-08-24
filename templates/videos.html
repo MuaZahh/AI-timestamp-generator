@@ -1,0 +1,509 @@
+{% extends "base.html" %}
+
+{% block title %}My Videos - AI Timestamp Generator{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Page Header -->
+    <div class="col-12 mb-4">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h2>
+                    <i class="bi bi-collection-play"></i>
+                    My Videos
+                </h2>
+                <p class="text-muted mb-0">Manage and view your uploaded videos</p>
+            </div>
+            <div>
+                <a href="{{ url_for('index') }}" class="btn btn-primary">
+                    <i class="bi bi-plus-circle"></i>
+                    Upload New Video
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filter and Search -->
+    <div class="col-12 mb-4">
+        <div class="card">
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <div class="input-group">
+                            <span class="input-group-text">
+                                <i class="bi bi-search"></i>
+                            </span>
+                            <input type="text" class="form-control" id="search-input" 
+                                   placeholder="Search videos...">
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <select class="form-select" id="status-filter">
+                            <option value="">All Status</option>
+                            <option value="uploaded">Uploaded</option>
+                            <option value="processing">Processing</option>
+                            <option value="completed">Completed</option>
+                            <option value="failed">Failed</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <select class="form-select" id="sort-order">
+                            <option value="newest">Newest First</option>
+                            <option value="oldest">Oldest First</option>
+                            <option value="name">Name A-Z</option>
+                            <option value="size">Largest First</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Videos Grid -->
+    <div class="col-12">
+        <!-- Loading State -->
+        <div id="loading-state" class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-3 text-muted">Loading your videos...</p>
+        </div>
+
+        <!-- Videos Container -->
+        <div id="videos-container" style="display: none;">
+            <div id="videos-grid" class="row g-4">
+                <!-- Videos will be loaded here -->
+            </div>
+        </div>
+
+        <!-- Empty State -->
+        <div id="empty-state" class="text-center py-5" style="display: none;">
+            <i class="bi bi-collection-play display-1 text-muted mb-3"></i>
+            <h4 class="text-muted">No Videos Found</h4>
+            <p class="text-muted mb-4">You haven't uploaded any videos yet, or no videos match your search criteria.</p>
+            <a href="{{ url_for('index') }}" class="btn btn-primary">
+                <i class="bi bi-plus-circle"></i>
+                Upload Your First Video
+            </a>
+        </div>
+    </div>
+
+    <!-- Bulk Actions -->
+    <div class="col-12 mt-4" id="bulk-actions" style="display: none;">
+        <div class="card border-warning">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <span id="selected-count">0</span> videos selected
+                    </div>
+                    <div>
+                        <button class="btn btn-warning btn-sm me-2" id="bulk-process-btn">
+                            <i class="bi bi-gear"></i>
+                            Process Selected
+                        </button>
+                        <button class="btn btn-danger btn-sm" id="bulk-delete-btn">
+                            <i class="bi bi-trash"></i>
+                            Delete Selected
+                        </button>
+                        <button class="btn btn-outline-secondary btn-sm ms-2" id="clear-selection-btn">
+                            Clear Selection
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Video Actions Modal -->
+<div class="modal fade" id="video-modal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Video Actions</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="modal-content">
+                    <!-- Content loaded dynamically -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+class VideosManager {
+    constructor() {
+        this.videos = [];
+        this.filteredVideos = [];
+        this.selectedVideos = new Set();
+        
+        this.initEventListeners();
+        this.loadVideos();
+    }
+
+    initEventListeners() {
+        // Search and filters
+        document.getElementById('search-input').addEventListener('input', () => {
+            this.filterVideos();
+        });
+
+        document.getElementById('status-filter').addEventListener('change', () => {
+            this.filterVideos();
+        });
+
+        document.getElementById('sort-order').addEventListener('change', () => {
+            this.filterVideos();
+        });
+
+        // Bulk actions
+        document.getElementById('bulk-process-btn').addEventListener('click', () => {
+            this.bulkProcess();
+        });
+
+        document.getElementById('bulk-delete-btn').addEventListener('click', () => {
+            this.bulkDelete();
+        });
+
+        document.getElementById('clear-selection-btn').addEventListener('click', () => {
+            this.clearSelection();
+        });
+    }
+
+    async loadVideos() {
+        try {
+            const response = await fetch('/api/videos');
+            const data = await response.json();
+
+            if (response.ok) {
+                this.videos = data.videos || [];
+                this.filteredVideos = [...this.videos];
+                this.displayVideos();
+            } else {
+                throw new Error(data.error || 'Failed to load videos');
+            }
+        } catch (error) {
+            console.error('Failed to load videos:', error);
+            showAlert(error.message, 'danger');
+            this.showEmptyState();
+        } finally {
+            document.getElementById('loading-state').style.display = 'none';
+        }
+    }
+
+    filterVideos() {
+        const searchTerm = document.getElementById('search-input').value.toLowerCase();
+        const statusFilter = document.getElementById('status-filter').value;
+        const sortOrder = document.getElementById('sort-order').value;
+
+        // Filter
+        this.filteredVideos = this.videos.filter(video => {
+            const matchesSearch = video.filename.toLowerCase().includes(searchTerm);
+            const matchesStatus = !statusFilter || video.status === statusFilter;
+            return matchesSearch && matchesStatus;
+        });
+
+        // Sort
+        this.filteredVideos.sort((a, b) => {
+            switch (sortOrder) {
+                case 'oldest':
+                    return new Date(a.created_at) - new Date(b.created_at);
+                case 'name':
+                    return a.filename.localeCompare(b.filename);
+                case 'size':
+                    return b.file_size - a.file_size;
+                default: // newest
+                    return new Date(b.created_at) - new Date(a.created_at);
+            }
+        });
+
+        this.displayVideos();
+    }
+
+    displayVideos() {
+        const container = document.getElementById('videos-container');
+        const grid = document.getElementById('videos-grid');
+        const emptyState = document.getElementById('empty-state');
+
+        if (this.filteredVideos.length === 0) {
+            container.style.display = 'none';
+            emptyState.style.display = 'block';
+            return;
+        }
+
+        container.style.display = 'block';
+        emptyState.style.display = 'none';
+
+        grid.innerHTML = this.filteredVideos.map(video => this.createVideoCard(video)).join('');
+    }
+
+    createVideoCard(video) {
+        const isSelected = this.selectedVideos.has(video.id);
+        const processingProgress = this.getProcessingProgress(video.status);
+        
+        return `
+            <div class="col-xl-3 col-lg-4 col-md-6">
+                <div class="card video-card h-100 ${isSelected ? 'border-primary' : ''}">
+                    <div class="card-body">
+                        <!-- Selection Checkbox -->
+                        <div class="form-check position-absolute" style="top: 10px; right: 10px;">
+                            <input class="form-check-input video-checkbox" type="checkbox" 
+                                   value="${video.id}" ${isSelected ? 'checked' : ''}>
+                        </div>
+
+                        <!-- Video Info -->
+                        <div class="mb-3">
+                            <h6 class="card-title text-truncate" title="${video.filename}">
+                                <i class="bi bi-play-circle"></i>
+                                ${video.filename}
+                            </h6>
+                            <div class="video-meta">
+                                <small class="text-muted d-block">
+                                    <i class="bi bi-calendar"></i>
+                                    ${new Date(video.created_at).toLocaleDateString()}
+                                </small>
+                                <small class="text-muted d-block">
+                                    <i class="bi bi-file-earmark"></i>
+                                    ${this.formatFileSize(video.file_size)}
+                                    ${video.duration ? ` • ${Math.round(video.duration)}s` : ''}
+                                </small>
+                            </div>
+                        </div>
+
+                        <!-- Status and Progress -->
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span class="badge ${this.getStatusBadge(video.status)}">
+                                    ${video.status.charAt(0).toUpperCase() + video.status.slice(1)}
+                                </span>
+                                ${video.timestamp_count > 0 ? `
+                                    <small class="text-success">
+                                        <i class="bi bi-clock"></i> ${video.timestamp_count} timestamps
+                                    </small>
+                                ` : ''}
+                            </div>
+                            ${video.status === 'processing' ? `
+                                <div class="progress progress-sm">
+                                    <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                         style="width: ${processingProgress}%"></div>
+                                </div>
+                            ` : ''}
+                        </div>
+
+                        <!-- Actions -->
+                        <div class="d-grid gap-2">
+                            <a href="/video/${video.id}" class="btn btn-primary btn-sm">
+                                <i class="bi bi-eye"></i>
+                                View Details
+                            </a>
+                            <div class="btn-group" role="group">
+                                ${video.status === 'uploaded' ? `
+                                    <button class="btn btn-outline-success btn-sm" 
+                                            onclick="processVideo('${video.id}')">
+                                        <i class="bi bi-play"></i>
+                                        Process
+                                    </button>
+                                ` : ''}
+                                ${video.has_transcript ? `
+                                    <button class="btn btn-outline-info btn-sm" 
+                                            onclick="viewTranscript('${video.id}')">
+                                        <i class="bi bi-file-text"></i>
+                                        Transcript
+                                    </button>
+                                ` : ''}
+                                ${video.timestamp_count > 0 ? `
+                                    <button class="btn btn-outline-warning btn-sm" 
+                                            onclick="exportVideo('${video.id}')">
+                                        <i class="bi bi-download"></i>
+                                        Export
+                                    </button>
+                                ` : ''}
+                                <button class="btn btn-outline-danger btn-sm" 
+                                        onclick="deleteVideo('${video.id}')">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    showEmptyState() {
+        document.getElementById('videos-container').style.display = 'none';
+        document.getElementById('empty-state').style.display = 'block';
+    }
+
+    getProcessingProgress(status) {
+        const progressMap = {
+            'uploaded': 10,
+            'processing': 50,
+            'completed': 100,
+            'failed': 0
+        };
+        return progressMap[status] || 0;
+    }
+
+    getStatusBadge(status) {
+        const badges = {
+            'uploaded': 'bg-info',
+            'processing': 'bg-warning',
+            'completed': 'bg-success',
+            'failed': 'bg-danger'
+        };
+        return badges[status] || 'bg-secondary';
+    }
+
+    formatFileSize(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    // Selection management
+    updateSelection() {
+        const checkboxes = document.querySelectorAll('.video-checkbox');
+        this.selectedVideos.clear();
+        
+        checkboxes.forEach(checkbox => {
+            if (checkbox.checked) {
+                this.selectedVideos.add(checkbox.value);
+            }
+        });
+
+        this.updateBulkActions();
+    }
+
+    updateBulkActions() {
+        const bulkActions = document.getElementById('bulk-actions');
+        const selectedCount = document.getElementById('selected-count');
+        
+        if (this.selectedVideos.size > 0) {
+            bulkActions.style.display = 'block';
+            selectedCount.textContent = this.selectedVideos.size;
+        } else {
+            bulkActions.style.display = 'none';
+        }
+    }
+
+    clearSelection() {
+        const checkboxes = document.querySelectorAll('.video-checkbox');
+        checkboxes.forEach(checkbox => checkbox.checked = false);
+        this.selectedVideos.clear();
+        this.updateBulkActions();
+        this.displayVideos(); // Refresh to remove selection styling
+    }
+
+    async bulkProcess() {
+        const videosToProcess = Array.from(this.selectedVideos).filter(id => {
+            const video = this.videos.find(v => v.id === id);
+            return video && video.status === 'uploaded';
+        });
+
+        if (videosToProcess.length === 0) {
+            showAlert('No videos available for processing', 'warning');
+            return;
+        }
+
+        if (!confirm(`Process ${videosToProcess.length} videos?`)) return;
+
+        for (const videoId of videosToProcess) {
+            try {
+                await fetch(`/api/video/${videoId}/process`, { method: 'POST' });
+            } catch (error) {
+                console.error(`Failed to process video ${videoId}:`, error);
+            }
+        }
+
+        showAlert(`Started processing ${videosToProcess.length} videos`, 'success');
+        this.clearSelection();
+        this.loadVideos();
+    }
+
+    async bulkDelete() {
+        if (this.selectedVideos.size === 0) return;
+
+        if (!confirm(`Delete ${this.selectedVideos.size} videos? This cannot be undone.`)) return;
+
+        let successCount = 0;
+        for (const videoId of this.selectedVideos) {
+            try {
+                const response = await fetch(`/api/video/${videoId}`, { method: 'DELETE' });
+                if (response.ok) successCount++;
+            } catch (error) {
+                console.error(`Failed to delete video ${videoId}:`, error);
+            }
+        }
+
+        showAlert(`Deleted ${successCount} videos successfully`, 'success');
+        this.clearSelection();
+        this.loadVideos();
+    }
+}
+
+// Global functions for video actions
+async function processVideo(videoId) {
+    try {
+        const response = await fetch(`/api/video/${videoId}/process`, { method: 'POST' });
+        const result = await response.json();
+
+        if (response.ok) {
+            showAlert('Processing started!', 'success');
+            window.location.reload();
+        } else {
+            throw new Error(result.error || 'Failed to start processing');
+        }
+    } catch (error) {
+        showAlert(error.message, 'danger');
+    }
+}
+
+async function deleteVideo(videoId) {
+    if (!confirm('Delete this video? This cannot be undone.')) return;
+
+    try {
+        const response = await fetch(`/api/video/${videoId}`, { method: 'DELETE' });
+        const result = await response.json();
+
+        if (response.ok) {
+            showAlert('Video deleted successfully!', 'success');
+            window.location.reload();
+        } else {
+            throw new Error(result.error || 'Failed to delete video');
+        }
+    } catch (error) {
+        showAlert(error.message, 'danger');
+    }
+}
+
+function viewTranscript(videoId) {
+    window.open(`/video/${videoId}`, '_blank');
+}
+
+function exportVideo(videoId) {
+    // Redirect to video page with export tab
+    window.location.href = `/video/${videoId}#export`;
+}
+
+// Initialize when page loads
+let videosManager;
+
+document.addEventListener('DOMContentLoaded', () => {
+    videosManager = new VideosManager();
+    
+    // Handle checkbox changes with event delegation
+    document.addEventListener('change', (e) => {
+        if (e.target.classList.contains('video-checkbox')) {
+            videosManager.updateSelection();
+            videosManager.displayVideos(); // Refresh to update selection styling
+        }
+    });
+});
+</script>
+{% endblock %}
